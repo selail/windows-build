@@ -1,4 +1,7 @@
 name: Build Windows App
+# Named after the dispatching correlationId so the Luxi server can find this specific run via the Actions
+# REST API — repository_dispatch's own response carries no run id back to the caller.
+run-name: windows-build-${{ github.event.client_payload.correlationId }}
 
 on:
   repository_dispatch:
@@ -31,25 +34,13 @@ jobs:
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -o publish
 
-      - name: Zip publish output
-        shell: pwsh
-        run: Compress-Archive -Path publish\* -DestinationPath app.zip
-
-      - name: Report success
-        if: success()
-        shell: pwsh
-        run: |
-          curl.exe -sS -X POST `
-            "${{ github.event.client_payload.callbackUrl }}?correlationId=${{ github.event.client_payload.correlationId }}&ok=true" `
-            -H "X-Windows-Callback-Token: ${{ secrets.CALLBACK_TOKEN }}" `
-            -H "Content-Type: application/octet-stream" `
-            --data-binary "@app.zip" `
-            --fail-with-body
-
-      - name: Report failure
-        if: failure()
-        shell: pwsh
-        run: |
-          curl.exe -sS -X POST `
-            "${{ github.event.client_payload.callbackUrl }}?correlationId=${{ github.event.client_payload.correlationId }}&ok=false&error=build-failed" `
-            -H "X-Windows-Callback-Token: ${{ secrets.CALLBACK_TOKEN }}"
+      # Uploaded un-zipped: actions/upload-artifact zips the contents of `path` itself, so downloading
+      # this artifact via the Actions API returns exactly the app zip the server hands the user — no
+      # double-zip unwrapping needed on the server side.
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.client_payload.correlationId }}
+          path: publish/
+          retention-days: 1
+          if-no-files-found: error
