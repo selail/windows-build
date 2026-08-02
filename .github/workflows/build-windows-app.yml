@@ -1,0 +1,55 @@
+name: Build Windows App
+
+on:
+  repository_dispatch:
+    types: [build-windows-app]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download source zip
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "${{ github.event.client_payload.sourceZipUrl }}" -OutFile source.zip
+
+      - name: Unzip source
+        shell: pwsh
+        run: Expand-Archive -Path source.zip -DestinationPath src
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish (self-contained, single-file, win-x64)
+        shell: pwsh
+        run: |
+          $csproj = Get-ChildItem -Path src -Filter *.csproj | Select-Object -First 1
+          dotnet publish $csproj.FullName -c Release -r win-x64 --self-contained true `
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o publish
+
+      - name: Zip publish output
+        shell: pwsh
+        run: Compress-Archive -Path publish\* -DestinationPath app.zip
+
+      - name: Report success
+        if: success()
+        shell: pwsh
+        run: |
+          curl.exe -sS -X POST `
+            "${{ github.event.client_payload.callbackUrl }}?correlationId=${{ github.event.client_payload.correlationId }}&ok=true" `
+            -H "X-Windows-Callback-Token: ${{ secrets.CALLBACK_TOKEN }}" `
+            -H "Content-Type: application/octet-stream" `
+            --data-binary "@app.zip" `
+            --fail-with-body
+
+      - name: Report failure
+        if: failure()
+        shell: pwsh
+        run: |
+          curl.exe -sS -X POST `
+            "${{ github.event.client_payload.callbackUrl }}?correlationId=${{ github.event.client_payload.correlationId }}&ok=false&error=build-failed" `
+            -H "X-Windows-Callback-Token: ${{ secrets.CALLBACK_TOKEN }}"
