@@ -30,7 +30,11 @@ jobs:
         shell: pwsh
         run: |
           $csproj = Get-ChildItem -Path src -Filter *.csproj | Select-Object -First 1
-          dotnet publish $csproj.FullName -c Release -r win-x64 --self-contained true `
+          # -r win-x64 alone doesn't set MSBuild's Platform property (it defaults to AnyCPU, which
+          # Self-Contained mode rejects: "The platform 'AnyCPU' is not supported for Self Contained
+          # mode") — the generated .csproj declares Platforms x86;x64;ARM64 with no single default, so
+          # Platform must be pinned explicitly to match the RID.
+          dotnet publish $csproj.FullName -c Release -r win-x64 -p:Platform=x64 --self-contained true `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -o publish
 
