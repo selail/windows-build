@@ -12,6 +12,19 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     steps:
+      # A raw ${{ }} interpolation of sourceZipUrl into any run: step's script text would otherwise be
+      # echoed verbatim in that step's own "##[group]Run ..." log line — and this is a PUBLIC repo, so
+      # that log is world-readable. actions/github-script accesses the payload via the JS `context`
+      # object at runtime instead of through ${{ }} pre-substitution, so nothing is interpolated into
+      # this step's own visible script text; core.setSecret masks the value for every later step's log
+      # output (including their own command-echo lines) from this point on. The URL is presigned and
+      # short-lived regardless (see WindowsAppBuildService.SOURCE_URL_EXPIRY) — this is defense in depth,
+      # not the only safeguard.
+      - name: Mask the source zip URL
+        uses: actions/github-script@v7
+        with:
+          script: core.setSecret(context.payload.client_payload.sourceZipUrl)
+
       - name: Download source zip
         shell: pwsh
         run: |
