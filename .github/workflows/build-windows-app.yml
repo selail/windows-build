@@ -51,19 +51,39 @@ jobs:
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
             -o publish
 
-      # DEBUG (temporary): XamlCompiler.exe emits nothing to stdout/stderr even at -v:detailed — its own
-      # diagnostic goes into output.json instead (it's invoked as "XamlCompiler.exe input.json output.json",
-      # a JSON-RPC-style protocol, not a plain CLI tool). Dump every input.json/output.json under obj/ so the
-      # actual XAML error is visible in the run log.
-      - name: Dump XamlCompiler input/output JSON on failure
+      # DEBUG (temporary): XamlCompiler.exe emits nothing to stdout/stderr even at -v:detailed, and doesn't
+      # even get far enough to write output.json — so its own diagnostic (if any) never reaches this log.
+      # Re-invoke it directly (bypassing MSBuild's Exec task, which may be swallowing something) to capture
+      # whatever it prints on its own, plus dump the actual XAML files on disk to rule out corruption in the
+      # download/unzip round-trip.
+      - name: Dump XamlCompiler input/output JSON + re-run it directly + dump XAML files on failure
         if: failure()
         shell: pwsh
         run: |
+          $objDir = "src\obj\x64\Release\net8.0-windows10.0.19041.0\win-x64"
           Get-ChildItem -Path src -Recurse -Include input.json,output.json -ErrorAction SilentlyContinue | ForEach-Object {
             Write-Host "##[group]$($_.FullName)"
             Get-Content -Raw $_.FullName
             Write-Host "##[endgroup]"
           }
+
+          Write-Host "##[group]Re-running XamlCompiler.exe directly"
+          $xamlCompiler = Get-ChildItem -Path "$env:USERPROFILE\.nuget\packages\microsoft.windowsappsdk" -Recurse -Filter XamlCompiler.exe | Select-Object -First 1
+          Write-Host "Tool: $($xamlCompiler.FullName)"
+          Push-Location $objDir
+          & $xamlCompiler.FullName input.json output2.json 2>&1 | ForEach-Object { Write-Host $_ }
+          Write-Host "ExitCode: $LASTEXITCODE"
+          Pop-Location
+          Write-Host "##[endgroup]"
+
+          Write-Host "##[group]XAML files on disk"
+          Get-ChildItem -Path src -Recurse -Include *.xaml | ForEach-Object {
+            Write-Host "--- $($_.FullName) ($((Get-Item $_.FullName).Length) bytes) ---"
+            $bytes = [System.IO.File]::ReadAllBytes($_.FullName)
+            Write-Host "First 8 bytes (hex): $(($bytes[0..7] | ForEach-Object { $_.ToString('x2') }) -join ' ')"
+            Write-Host (Get-Content -Raw $_.FullName)
+          }
+          Write-Host "##[endgroup]"
 
       # Uploaded un-zipped: actions/upload-artifact zips the contents of `path` itself, so downloading
       # this artifact via the Actions API returns exactly the app zip the server hands the user — no
