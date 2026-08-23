@@ -49,8 +49,21 @@ jobs:
           # Platform must be pinned explicitly to match the RID.
           dotnet publish $csproj.FullName -c Release -r win-x64 -p:Platform=x64 --self-contained true `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
-            --verbosity detailed `
             -o publish
+
+      # DEBUG (temporary): XamlCompiler.exe emits nothing to stdout/stderr even at -v:detailed — its own
+      # diagnostic goes into output.json instead (it's invoked as "XamlCompiler.exe input.json output.json",
+      # a JSON-RPC-style protocol, not a plain CLI tool). Dump every input.json/output.json under obj/ so the
+      # actual XAML error is visible in the run log.
+      - name: Dump XamlCompiler input/output JSON on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path src -Recurse -Include input.json,output.json -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "##[group]$($_.FullName)"
+            Get-Content -Raw $_.FullName
+            Write-Host "##[endgroup]"
+          }
 
       # Uploaded un-zipped: actions/upload-artifact zips the contents of `path` itself, so downloading
       # this artifact via the Actions API returns exactly the app zip the server hands the user — no
