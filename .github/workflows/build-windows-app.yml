@@ -49,6 +49,7 @@ jobs:
           # Platform must be pinned explicitly to match the RID.
           dotnet publish $csproj.FullName -c Release -r win-x64 -p:Platform=x64 --self-contained true `
             -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true `
+            --verbosity normal `
             -o publish
 
       # Uploaded un-zipped: actions/upload-artifact zips the contents of `path` itself, so downloading
